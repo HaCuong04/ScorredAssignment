@@ -4,23 +4,26 @@ const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = 'your_secret_key'; 
+const SECRET_KEY = 'your_secret_key';
 
 app.use(bodyParser.json());
 
-const user = {
-    username: 'user',
-    password: 'password'
+const users = {
+    admin: { username: 'admin', password: 'adminpass', role: 'admin' },
+    user: { username: 'user', password: 'userpass', role: 'user' }
 };
+
+let posts = [];
 
 app.post('/signin', (req, res) => {
     const { username, password } = req.body;
 
-    if (username === user.username && password === user.password) {
-        const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
+    const user = users[username];
+    if (user && user.password === password) {
+        const token = jwt.sign({ username, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
         return res.json({ token });
     }
-    
+
     return res.status(401).json({ message: 'Invalid credentials' });
 });
 
@@ -36,14 +39,27 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+const checkAdminRole = (req, res, next) => {
+    if (req.user.role === 'admin') {
+        next();
+    } else {
+        res.sendStatus(403);
+    }
+};
+
 app.get('/posts', authenticateToken, (req, res) => {
-    const posts = [
-        "The early bird catches the worm."
-    ];
     res.json(posts);
+});
+
+app.post('/posts', authenticateToken, checkAdminRole, (req, res) => {
+    const { message } = req.body;
+    if (message) {
+        posts.push(message);
+        return res.status(201).json({ message: 'Post added successfully' });
+    }
+    return res.status(400).json({ message: 'Message is required' });
 });
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
-
