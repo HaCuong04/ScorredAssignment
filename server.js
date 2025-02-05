@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'your_secret_key';
+const REFRESH_SECRET_KEY = 'your_refresh_secret_key';
 
 app.use(bodyParser.json());
 
@@ -14,14 +15,19 @@ const users = {
 };
 
 let posts = [];
+let refreshTokens = [];
 
 app.post('/signin', (req, res) => {
     const { username, password } = req.body;
 
     const user = users[username];
     if (user && user.password === password) {
-        const token = jwt.sign({ username, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
-        return res.json({ token });
+        const accessToken = jwt.sign({ username, role: user.role }, SECRET_KEY, { expiresIn: '15m' });
+        const refreshToken = jwt.sign({ username, role: user.role }, REFRESH_SECRET_KEY, { expiresIn: '7d' });
+        
+        refreshTokens.push(refreshToken);
+        
+        return res.json({ accessToken, refreshToken });
     }
 
     return res.status(401).json({ message: 'Invalid credentials' });
@@ -58,6 +64,27 @@ app.post('/posts', authenticateToken, checkAdminRole, (req, res) => {
         return res.status(201).json({ message: 'Post added successfully' });
     }
     return res.status(400).json({ message: 'Message is required' });
+});
+
+app.post('/token', (req, res) => {
+    const { token } = req.body;
+
+    if (!token || !refreshTokens.includes(token)) {
+        return res.sendStatus(403);
+    }
+
+    jwt.verify(token, REFRESH_SECRET_KEY, (err, user) => {
+        if (err) return res.sendStatus(403);
+        
+        const accessToken = jwt.sign({ username: user.username, role: user.role }, SECRET_KEY, { expiresIn: '15m' });
+        return res.json({ accessToken });
+    });
+});
+
+app.post('/logout', (req, res) => {
+    const { token } = req.body;
+    refreshTokens = refreshTokens.filter(t => t !== token);
+    res.sendStatus(204);
 });
 
 app.listen(PORT, () => {
